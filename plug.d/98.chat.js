@@ -45,7 +45,7 @@ jj/chat ban|unban user|group qq号/群号
 会不响应指定用户或群的所有消息，除了jj/chat命令
 jj/chat forget [关键词] 回复
 命令机器人忘掉指定关键词下指定的回复【没有确认，慎用】
-回复为全文精确匹配，关键词为like '%...%' 不输入或输入%为忘掉全部
+回复为全文精确匹配，关键词为regexp '...' 不输入或输入.*为忘掉全部
 */
 
 //此函数为胡写！！！！！希望有懂聊天AI的人重写一个
@@ -88,8 +88,9 @@ pluginChat.prototype = {
 		this.mod = Bot.mod;
 		this.ext = Bot.mod.db;
 		this.db = this.ext.db;
-		this.disabled=false;
-		this.count=0;
+		this.disabledGlobal=false;
+		this.disabledGroup=[];
+		this.disabledGroupCount=[];
 		Bot.mod.log.info ('Init chat database ...');
 		this.db.query (this.ext._(this.ext.__(function () {/*
 		create table if not exists `jB_chat` (
@@ -97,25 +98,45 @@ pluginChat.prototype = {
 			`answer` TEXT NOT NULL
 		)ENGINE = %s DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
 		*/}), this.ext.conf.engine));
+		this.db.query (this.ext._(this.ext.__(function () {/*
+		create table if not exists `jB_chat_banned` (
+			`num` INT NOT NULL,
+			`isGroup` BOOLEAN NOT NULL
+		)ENGINE = %s DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
+		*/}), this.ext.conf.engine));
 	},
-	disable: function(next,reply) {
-		if(!this.disabled) {
-			this.count++;
-			if(this.count==this.conf.disableCount) {
+	banned: function(msg) {
+		//TODO
+	},
+	disabled: function(msg) {
+		if(msg.isGroup && typeof(this.disabledGroup[msg.from_group])=='undefined') {
+			this.disabledGroup[msg.from_group]=false;
+			this.disabledGroupCount[msg.from_group]=0;
+		}
+		return this.disabledGlobal || this.banned(msg) || (msg.isGroup && this.disabledGroup[msg.from_group]);
+	},
+	disable: function(next,reply,msg,force) {
+		if(this.disabledGlobal || this.banned(msg)) return;
+		if(msg.isGroup && !this.disabled(msg)) {
+			var group=msg.from_group;
+			this.disabledGroupCount[group]++;
+			if(force===true || this.disabledGroupCount[group]==this.conf.disableCount) {
 				reply(this.conf.name+'已停用，发送 '+(this.conf.usePrefixToDisable?(this.bot.conf.cmdPrefix+'/'):'')+this.conf.enableCmd+' 可启用我哦~');
-				this.disabled=true;
-				this.count=0;
-			}else reply('已有'+this.count+'人请求停用'+this.conf.name+'，还需要'+(this.conf.disableCount-this.count)+'人请求才会执行~');
+				this.disabledGroup[group]=true;
+				this.disabledGroupCount[group]=0;
+			}else reply('已有'+this.disabledGroupCount[group]+'人请求停用'+this.conf.name+'，还需要'+(this.conf.disableCount-this.disabledGroupCount[group])+'人请求才会执行~');
 		}
 	},
-	enable: function(next,reply) {
-		if(this.disabled) {
-			this.count++;
-			if(this.count==this.conf.disableCount) {
+	enable: function(next,reply,msg,force) {
+		if(this.disabledGlobal || this.banned(msg)) return;
+		if(msg.isGroup && this.disabled(msg)) {
+			var group=msg.from_group;
+			this.disabledGroupCount[group]++;
+			if(force===true || this.disabledGroupCount[group]==this.conf.disableCount) {
 				reply(this.conf.name+'已启用，发送 '+(this.conf.usePrefixToDisable?(this.bot.conf.cmdPrefix+'/'):'')+this.conf.disableCmd+' 可停用我哦~');
-				this.disabled=false;
-				this.count=0;
-			}else reply('已有'+this.count+'人请求启用'+this.conf.name+'，还需要'+(this.conf.disableCount-this.count)+'人请求才会执行~');
+				this.disabledGroup[group]=false;
+				this.disabledGroupCount[group]=0;
+			}else reply('已有'+this.disabledGroupCount[group]+'人请求启用'+this.conf.name+'，还需要'+(this.conf.disableCount-this.disabledGroupCount[group])+'人请求才会执行~');
 		}
 	},
 	load: function () {
@@ -139,6 +160,11 @@ pluginChat.prototype = {
 		}
 		
 		var that = this;
+		
+		that.regEvent('msg-cmd-'+chat, function (next,reply, msg, args) {
+			//TODO
+		});
+		
 		if(that.conf.recieveDisable) {
 			if(that.conf.usePrefixToDisable) {
 				// 设置命令说明文本
@@ -152,15 +178,15 @@ pluginChat.prototype = {
 			} else {
 				that.regEvent ('msg', function (next,content, msg, reply) {
 					if(content.trim()==that.conf.disableCmd) {
-						that.disable(next,reply);
+						that.disable(next,reply,msg,false);
 					}
 					if(content.trim()==that.conf.enableCmd)
-						that.enable(next,reply);
+						that.enable(next,reply,msg,false);
 				});
 			}
 		}
 		
-		if(!that.disabled) {
+		if(!that.disabled(msg)) {
 			if(that.conf.allowTeach) {
 				that.regEvent ('help-init', function () {
 					that.bot.Plugin.onSync('help-set-cmd-desc',that.conf.teachCommand,'关键词 '+that.conf.teachSeparator+' 回答','教我说话');
@@ -174,8 +200,9 @@ pluginChat.prototype = {
 					}
 					str[0].trim();
 					if(str[0].match(/\/[^.]*\);/)!==null || 
-						str[0].replace(/[\s.*+?\\$^\[\]]*/g,'').replace(/\{.*\}/g,'').length==0 ||
-						str[0].replace(/[\s?\\$^\[\]]*/g,'').replace(/\{.*\}/g,'').match(/^(\.+[+*]*)+$/)!==null) {
+						str[0].replace(/[\s.*+?\\$^\[\]\|]*/g,'').replace(/\{.*\}/g,'').replace(/\[.*\]/g,'').length==0 ||
+						str[0].replace(/[\s?\\$^\[\]]*/g,'').replace(/\{.*\}/g,'').match(/^(\.+[+*]*)+$/)!==null ||
+						str[0].replace(/[\s.*+?\\$^\[\]]*/g,'').replace(/\{.*\}/g,'').match(/(\(\|)|(\|\|)|(\|\))/)!==null) {
 						reply('请勿作死。');
 						return;
 					}
@@ -205,7 +232,7 @@ pluginChat.prototype = {
 			}
 		}
 		that.regEvent('msg',function (next,str,msg,reply) {
-			if(!that.disabled) {
+			if(!that.disabled(msg)) {
 				if(!msg.isGroup || Math.random()<=that.conf.answerRate) {
 					that.db.query ('select * from `jB_chat` where ? regexp ask', str, function (err, data) { //CANT SPLIT CHINESE, HAVE TO MATCH WITH KEYWORD
 						if (data.length) {
@@ -224,8 +251,9 @@ pluginChat.prototype = {
 		});
 	},
 	unload: function () {
-		this.disabled=false;
-		this.count=0;
+		this.disabledGlobal=false;
+		this.disabledGroup=[];
+		this.disabledGroupCount=[];
 		this.conf={};
 	}
 };
