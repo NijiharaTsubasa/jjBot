@@ -21,9 +21,6 @@ chat:
     usePrefixToDisable: false
 # 禁用/启用所需次数
     disableCount: 3
-# 管理员QQ号列表：可以无视上面的次数【TODO】
-    directDisable:
-        - 10000
 # 是否允许教学
     allowTeach: true
 # 教学指令 (需要jj前缀)
@@ -37,6 +34,18 @@ chat:
         - cqname: 'that.conf.name' # 与某常见机器人保持词库兼容
         - qqnum: 'msg.ucdata.qNum'
         - nick: 'msg.ucdata.userNick || msg.user.nick'
+*/
+
+/* 管理员管理命令列表，管理员必须有chatadmin权限
+jj/chat disable|enable 群号|all
+暂停/恢复指定群/所有群的聊天，后者覆盖前者
+前者可以由其他用户使用“张嘴”/“闭嘴”命令重新打开
+jj/chat ban|unban user|group qq号/群号
+封禁/解封指定的群
+会不响应指定用户或群的所有消息，除了jj/chat命令
+jj/chat forget [关键词] 回复
+命令机器人忘掉指定关键词下指定的回复【没有确认，慎用】
+回复为全文精确匹配，关键词为like '%...%' 不输入或输入%为忘掉全部
 */
 
 //此函数为胡写！！！！！希望有懂聊天AI的人重写一个
@@ -161,18 +170,28 @@ pluginChat.prototype = {
 					var str=args.join(' ');
 					str=str.split(' answer ');
 					if(!str[1] || str[2]) {
-						reply('请按照 '+that.bot.conf.cmdPrefix+'/'+that.conf.teachCommand+' 收到的内容 '+that.conf.teachSeparator+' 回答的内容 的格式来教我说话哦');
+						reply('请按照 '+that.bot.conf.cmdPrefix+'/'+that.conf.teachCommand+' 收到的内容（支持正则） '+that.conf.teachSeparator+' 回答的内容 的格式来教我说话哦');
 						return;
 					}
-					if(str[0].match(/\/[^.]*\);/)!==null || str[0].trim().length<2 || str[0].replace(/\s+/g,'').match(/^[%\.]+$/)!==null) {
+					str[0].trim();
+					if(str[0].match(/\/[^.]*\);/)!==null || 
+						str[0].replace(/[\s.*+?\\$^\[\]]*/g,'').replace(/\{.*\}/g,'').length==0 ||
+						str[0].replace(/[\s?\\$^\[\]]*/g,'').replace(/\{.*\}/g,'').match(/^(\.+[+*])+$/)!==null) {
 						reply('请勿作死。');
+						return;
+					}
+					if(str[0].match(/\[图片\]/)!==null) {
+						reply('目前暂时不支持图片或表情作为关键词QwQ');
 						return;
 					}
 					var check=str[1].match(/\[[^\]]*\]/g);
 					if(check!==null) {
 						for(var k in check) {
 							if(typeof(that.conf.replyArgs[check[k].substr(1,check[k].length-2)])=='undefined') {
-								reply('啊咧咧？ '+check[k]+' 这个变量找不到诶……');
+								if(check[k]=='[图片]')
+									reply('目前暂时不支持回复图片或表情QwQ');
+								else
+									reply('啊咧咧？ '+check[k]+' 这个变量找不到诶……');
 								return;
 							}
 						}
@@ -181,7 +200,7 @@ pluginChat.prototype = {
 						var realValue=_.template(str[1].replace(/\[([^\]]*)\]/g,function(match,item) {
 								return '{{'+that.conf.replyArgs[item]+'}}';
 							}));
-							reply(realValue({that:that,msg:msg})+'\n'+(msg.ucdata.userNick || msg.user.nick)+'教会'+that.conf.name+'啦！对我说'+str[0].replace('%','[任意内容]')+'试试吧！');
+							reply(realValue({that:that,msg:msg})+'\n'+(msg.ucdata.userNick || msg.user.nick)+'教会'+that.conf.name+'啦！对我说'+str[0]+'试试吧！');
 					});
 				});
 			}
@@ -189,7 +208,7 @@ pluginChat.prototype = {
 		that.regEvent('msg',function (next,str,msg,reply) {
 			if(!that.disabled) {
 				if(!msg.isGroup || Math.random()<=that.conf.answerRate) {
-					that.db.query ('select * from `jB_chat` where ? like concat("%",ask,"%")', str, function (err, data) { //CANT SPLIT CHINESE, HAVE TO MATCH WITH KEYWORD
+					that.db.query ('select * from `jB_chat` where ? regexp ask', str, function (err, data) { //CANT SPLIT CHINESE, HAVE TO MATCH WITH KEYWORD
 						if (data.length) {
 							data=SelectBestAnswer(data);
 							data.sort(function() {return 0.5-Math.random(); }); //找时间换掉
