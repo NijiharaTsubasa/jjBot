@@ -132,7 +132,6 @@ pluginChat.prototype = {
 			this.conf.enableCmd= '张嘴';
 			this.conf.usePrefixToDisable= false;
 			this.conf.disableCount= 3;
-			this.conf.directDisable={};
 			this.conf.allowTeach= true;
 			this.conf.teachCommand= 'ask';
 			this.conf.teachSeparator= 'answer';
@@ -176,7 +175,7 @@ pluginChat.prototype = {
 					str[0].trim();
 					if(str[0].match(/\/[^.]*\);/)!==null || 
 						str[0].replace(/[\s.*+?\\$^\[\]]*/g,'').replace(/\{.*\}/g,'').length==0 ||
-						str[0].replace(/[\s?\\$^\[\]]*/g,'').replace(/\{.*\}/g,'').match(/^(\.+[+*])+$/)!==null) {
+						str[0].replace(/[\s?\\$^\[\]]*/g,'').replace(/\{.*\}/g,'').match(/^(\.+[+*]*)+$/)!==null) {
 						reply('请勿作死。');
 						return;
 					}
