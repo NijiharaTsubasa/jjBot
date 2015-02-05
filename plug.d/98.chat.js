@@ -148,7 +148,7 @@ pluginChat.prototype = {
 			//载入缺省配置
 			this.conf.name= 'jjBot';
 			this.conf.answerRate= 0.8;
-			this.conf.recieveDisable= false; //太容易触发禁言
+			this.conf.recieveDisable= true;
 			this.conf.disableCmd= '闭嘴';
 			this.conf.enableCmd= '张嘴';
 			this.conf.usePrefixToDisable= false;
@@ -161,7 +161,7 @@ pluginChat.prototype = {
 		
 		var that = this;
 		
-		that.regEvent('msg-cmd-'+chat, function (next,reply, msg, args) {
+		that.regEvent('msg-cmd-chat', function (next,reply, msg, args) {
 			//TODO
 		});
 		
@@ -186,12 +186,12 @@ pluginChat.prototype = {
 			}
 		}
 		
-		if(!that.disabled(msg)) {
-			if(that.conf.allowTeach) {
-				that.regEvent ('help-init', function () {
-					that.bot.Plugin.onSync('help-set-cmd-desc',that.conf.teachCommand,'关键词 '+that.conf.teachSeparator+' 回答','教我说话');
-				});
-				that.regEvent('msg-cmd-'+that.conf.teachCommand, function (next,reply, msg, args) {
+		if(that.conf.allowTeach) {
+			that.regEvent ('help-init', function () {
+				that.bot.Plugin.onSync('help-set-cmd-desc',that.conf.teachCommand,'关键词 '+that.conf.teachSeparator+' 回答','教我说话');
+			});
+			that.regEvent('msg-cmd-'+that.conf.teachCommand, function (next,reply, msg, args) {
+				if(!that.disabled(msg)) {
 					var str=args.join(' ');
 					str=str.split(' answer ');
 					if(!str[1] || str[2]) {
@@ -226,10 +226,11 @@ pluginChat.prototype = {
 						var realValue=_.template(str[1].replace(/\[([^\]]*)\]/g,function(match,item) {
 								return '{{'+that.conf.replyArgs[item]+'}}';
 							}));
-							reply(realValue({that:that,msg:msg})+'\n'+(msg.ucdata.userNick || msg.user.nick)+'教会'+that.conf.name+'啦！对我说'+str[0]+'试试吧！');
+							reply(realValue({that:that,msg:msg});
+							reply(msg.ucdata.userNick || msg.user.nick)+'教会'+that.conf.name+'啦！对我说'+str[0]+'试试吧！');
 					});
-				});
-			}
+				}
+			});
 		}
 		that.regEvent('msg',function (next,str,msg,reply) {
 			if(!that.disabled(msg)) {
